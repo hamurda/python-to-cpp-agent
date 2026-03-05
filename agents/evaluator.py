@@ -1,11 +1,21 @@
-from openai import OpenAI
 import json
+from openai import OpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
 
 SYSTEM_MESSAGE = (
     "You are a C++ code reviewer. Your job is to evaluate whether a C++ translation "
-    "of Python code is correct, without executing it. "
-    "You will be given the original Python code, the C++ translation, and test cases with expected outputs. "
-    "Check for: logical equivalence, integer overflow risks, missing headers, and output format correctness. "
+    "of Python code computes the same results, without executing it. "
+    "You will be given the original Python code, the C++ translation, and test cases. "
+    "Focus on COMPUTATIONAL CORRECTNESS: does the C++ implement the same algorithm "
+    "and produce the same numerical results? "
+    "Check for: logical equivalence, integer overflow risks, and missing headers. "
+    "DO NOT fail the translation for: output formatting differences (print prefixes, "
+    "decimal precision, spacing), exception message wording, or minor stylistic differences "
+    "that don't affect the computed result. "
+    "If the core computation is correct but formatting differs, verdict should be PASS "
+    "and you can note the formatting differences as non-blocking observations. "
     "Respond only in valid JSON — no preamble, no markdown fences. "
     "Format: {\"verdict\": \"PASS\" | \"FAIL\" | \"WARN\", \"confidence\": int (0-100), "
     "\"issues\": [str], \"summary\": str}"
@@ -13,7 +23,7 @@ SYSTEM_MESSAGE = (
 
 
 class Evaluator:
-    def __init__(self, model: str = "gpt-4o"):
+    def __init__(self, model: str = "gpt-5-mini"):
         self.client = OpenAI()
         self.model = model
 

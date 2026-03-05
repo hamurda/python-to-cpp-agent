@@ -1,9 +1,14 @@
 import gradio as gr
 from pathlib import Path
+from dotenv import load_dotenv
 from agents import Translator, TestGenerator, Evaluator
+
+load_dotenv()
 
 PI_EXAMPLE = open("examples/pi_calculation.py").read()
 SUBARRAY_EXAMPLE = open("examples/max_subarray.py").read()
+
+MAX_RETRIES = 3
 
 
 def run_pipeline(python_code: str):
@@ -11,21 +16,46 @@ def run_pipeline(python_code: str):
         return "No input provided.", "", "", ""
 
     try:
-        yield "🔄 Translating Python → C++...", "", "", ""
         translator = Translator()
+        test_generator = TestGenerator()
+        evaluator = Evaluator()
+
+        yield "🔄 Translating Python → C++...", "", "", ""
         cpp_code = translator.run(python_code)
 
         yield "🧪 Generating test cases...", cpp_code, "", ""
-        test_generator = TestGenerator()
         test_cases = test_generator.run(python_code)
 
-        yield "🔍 Evaluating translation...", cpp_code, format_test_cases(test_cases), ""
-        evaluator = Evaluator()
-        evaluation = evaluator.run(python_code, cpp_code, test_cases)
+        for attempt in range(1, MAX_RETRIES + 1):
+            yield (
+                f"🔍 Evaluating translation (attempt {attempt}/{MAX_RETRIES})...",
+                cpp_code,
+                format_test_cases(test_cases),
+                "",
+            )
+            evaluation = evaluator.run(python_code, cpp_code, test_cases)
+
+            verdict = evaluation.get("verdict", "UNKNOWN")
+            if verdict == "PASS":
+                break
+
+            if attempt < MAX_RETRIES:
+                issues = evaluation.get("issues", [])
+                summary = evaluation.get("summary", "Translation has issues.")
+                all_feedback = issues if issues else [summary]
+
+                yield (
+                    f"🔧 Attempt {attempt} got {verdict} — fixing issues...",
+                    cpp_code,
+                    format_test_cases(test_cases),
+                    format_evaluation(evaluation),
+                )
+                cpp_code = translator.fix(python_code, cpp_code, all_feedback)
 
         save_cpp(cpp_code)
 
-        yield "✅ Done!", cpp_code, format_test_cases(test_cases), format_evaluation(evaluation)
+        status = f"✅ Passed on attempt {attempt}!" if verdict == "PASS" else f"⚠️ Best effort after {MAX_RETRIES} attempts ({verdict})"
+        yield status, cpp_code, format_test_cases(test_cases), format_evaluation(evaluation)
 
     except Exception as e:
         yield f"❌ Error: {str(e)}", "", "", ""
@@ -66,7 +96,7 @@ def save_cpp(cpp_code: str):
 
 
 with gr.Blocks(title="Python → C++ Agent", theme=gr.themes.Monochrome()) as demo:
-    gr.Markdown("# 🤖 Python → C++ Translation Agent")
+    gr.Markdown("# Python → C++ Translation Agent")
     gr.Markdown(
         "Paste Python code below. The pipeline will translate it to C++, "
         "generate test cases, and evaluate the translation — no compiler needed."
@@ -83,7 +113,7 @@ with gr.Blocks(title="Python → C++ Agent", theme=gr.themes.Monochrome()) as de
             with gr.Row():
                 example_pi = gr.Button("Load Pi Example")
                 example_sub = gr.Button("Load Subarray Example")
-            run_btn = gr.Button("▶ Run Pipeline", variant="primary")
+            run_btn = gr.Button("Run Pipeline", variant="primary")
 
         with gr.Column():
             status = gr.Textbox(label="Status", interactive=False)

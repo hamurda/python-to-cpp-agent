@@ -1,9 +1,13 @@
 import argparse
 from pathlib import Path
+from dotenv import load_dotenv
 from agents import Translator, TestGenerator, Evaluator
 
+load_dotenv()
 
-def print_report(python_code: str, cpp_code: str, test_cases: dict, evaluation: dict):
+MAX_RETRIES = 3
+
+def print_report(cpp_code: str, test_cases: dict, evaluation: dict):
     verdict = evaluation.get("verdict", "UNKNOWN")
     confidence = evaluation.get("confidence", 0)
     issues = evaluation.get("issues", [])
@@ -52,20 +56,37 @@ def save_cpp(cpp_code: str, output_path: str = "output/optimized.cpp"):
 
 
 def run_pipeline(python_code: str, output_path: str = "output/optimized.cpp"):
-    print("\n🔄 Step 1/3: Translating Python → C++...")
     translator = Translator()
+    test_generator = TestGenerator()
+    evaluator = Evaluator()
+
+    print("\n🔄 Step 1/3: Translating Python → C++...")
     cpp_code = translator.run(python_code)
 
     print("🧪 Step 2/3: Generating test cases...")
-    test_generator = TestGenerator()
     test_cases = test_generator.run(python_code)
 
-    print("🔍 Step 3/3: Evaluating translation...")
-    evaluator = Evaluator()
-    evaluation = evaluator.run(python_code, cpp_code, test_cases)
+    for attempt in range(1, MAX_RETRIES + 1):
+        print(f"🔍 Step 3: Evaluating translation (attempt {attempt}/{MAX_RETRIES})...")
+        evaluation = evaluator.run(python_code, cpp_code, test_cases)
+
+        verdict = evaluation.get("verdict", "UNKNOWN")
+        confidence = evaluation.get("confidence", 0)
+        if verdict == "PASS":
+            print(f"✅ Translation passed evaluation on attempt {attempt}.")
+            break
+
+        if attempt < MAX_RETRIES:
+            issues = evaluation.get("issues", [])
+            summary = evaluation.get("summary", "Translation has issues.")
+            all_feedback = issues if issues else [summary]
+            print(f"⚠️  Verdict: {verdict} — sending feedback to translator...")
+            cpp_code = translator.fix(python_code, cpp_code, all_feedback)
+        else:
+            print(f"⚠️  Verdict: {verdict} after {MAX_RETRIES} attempts. Returning best effort.")
 
     save_cpp(cpp_code, output_path)
-    print_report(python_code, cpp_code, test_cases, evaluation)
+    print_report(cpp_code, test_cases, evaluation)
 
     return cpp_code, test_cases, evaluation
 
