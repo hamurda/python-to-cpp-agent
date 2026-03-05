@@ -1,14 +1,6 @@
 # Python → C++ Translation Agent
 
-A 3-agent pipeline that translates Python to C++ and verifies correctness, no compiler required.
-
-## The Problem
-
-LLMs can generate or translate code fairly well. This project builds an agentic 
-verification loop around the translation step: one LLM translates, a second generates 
-test expectations from the source Python, and a third evaluates the translation against those expectations. 
-If the evaluation fails, the issues are fed back to the translator for another attempt, up to 3
-iterations until it passes or returns its best effort.
+Translates Python to C++ and verifies correctness using a 3-agent loop, no compiler required.
 
 ## How It Works
 
